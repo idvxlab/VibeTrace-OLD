@@ -66,18 +66,18 @@ opencode plugin @xiaokeyan/opencode-vibetrace@1.0.0 -g
 
 For an older V1 release, update within the V1 line first.
 
-**OpenCode V2: `2.x`** — beta, tested with the 2.1.4 terminal client:
+**OpenCode V2: `2.x`** — VibeTrace 1.0.1, tested with the 2.1.4 terminal client:
 
 macOS / Linux:
 
 ```sh
-npx --yes @xiaokeyan/opencode-v2-vibetrace@next setup
+npx --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
 ```
 
 Windows PowerShell / Command Prompt:
 
 ```powershell
-npx.cmd --yes @xiaokeyan/opencode-v2-vibetrace@next setup
+npx.cmd --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
 ```
 
 Fully restart OpenCode after installation. For V2, restart its shared service
@@ -85,6 +85,14 @@ with `opencode service restart` first. VibeTrace starts its services and opens
 the dashboard automatically. Native Windows end-to-end validation is pending.
 
 ### Optional: choose a background analysis model
+
+In the V2 dashboard, click the gear beside the chat model selector to open
+**Background model settings**. Set the background analysis model and optionally
+set a separate skill evolution model, then click **Save**. Use `providerID/modelID`
+for a model already configured in OpenCode. A blank skill evolution model follows
+the background model. Saved changes apply to new internal tasks; running tasks
+keep their model, and the chat model is selected separately. Explicit plugin
+options or environment overrides take priority over dashboard settings.
 
 Both release lines use OpenCode's configured models. Background analysis defaults
 to `opencode/big-pickle`. If it is unavailable or its quota is exhausted, choose a
@@ -144,10 +152,10 @@ and analysis data are stored locally:
 
 **V1:** remove `@xiaokeyan/opencode-vibetrace` from your `opencode.json(c)` plugin list.
 
-**V2:** remove the installed version (replace `1.0.0-beta.2` if different):
+**V2:** remove the installed version (replace `1.0.1` if different):
 
 ```sh
-opencode plugin remove @xiaokeyan/opencode-v2-vibetrace@1.0.0-beta.2
+opencode plugin remove @xiaokeyan/opencode-v2-vibetrace@1.0.1
 ```
 
 **Local development install:** run from the source checkout:

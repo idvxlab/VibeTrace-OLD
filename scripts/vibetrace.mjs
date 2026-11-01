@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { root, runtimeDir, pythonExecutable, nodeExecutable, liveState, openBrowser } from '../plugins/launcher.mjs'
 import { findNode, findPython } from '../plugins/environment.mjs'
+import { readModelConfig, writeModelConfig } from '../plugins/model-config.mjs'
 
 function runOpenCode(args, options = {}) {
   // npm-installed OpenCode can be a .cmd shim on Windows. Only fixed commands
@@ -47,6 +48,20 @@ const wrapper = resolve(packageDir, 'index.js')
 const manifest = resolve(packageDir, 'package.json')
 const marker = '// Managed by VibeTrace local installer\n'
 let proceed = true
+if (command === 'configure') {
+  const patch = {}
+  for (const [flag, key] of [['--background-model', 'backgroundModel'], ['--skill-model', 'skillEvolutionModel']]) {
+    const index = process.argv.indexOf(flag)
+    if (index < 0) continue
+    if (!process.argv[index + 1] || process.argv[index + 1].startsWith('--')) throw new Error(`${flag} requires providerID/modelID`)
+    patch[key] = process.argv[index + 1]
+  }
+  const file = resolve(runtimeDir, 'config.json')
+  const saved = Object.keys(patch).length ? writeModelConfig(file, patch) : readModelConfig(file)
+  console.log(`VibeTrace config: ${file}\nBackground analysis: ${saved.backgroundModel || 'opencode/big-pickle (default)'}\nSkill evolution: ${saved.skillEvolutionModel || 'inherits background model unless overridden by environment'}`)
+  if (Object.keys(patch).length) console.log('Saved. Fully quit and reopen OpenCode to restart the worker with these models. Chat model selection is separate.')
+  proceed = false
+}
 if (command === 'doctor' || command === 'setup') {
   const report = inspectEnvironment()
   showEnvironment(report)
@@ -105,4 +120,4 @@ if (proceed && (command === 'install' || command === 'setup' && process.argv.inc
     for (const state of states) process.kill(state.pid, 'SIGTERM')
     if (states.length) console.log(`Stopping ${states.length} managed VibeTrace service(s). OpenCode itself remains open.`)
   }
-} else if (!['doctor', 'setup'].includes(command)) throw new Error('Usage: vibetrace doctor [--json] | setup [--local] | install|uninstall|status|open|stop [--plugin-dir DIRECTORY]')
+} else if (!['doctor', 'setup', 'configure'].includes(command)) throw new Error('Usage: vibetrace doctor [--json] | setup [--local] | configure [--background-model provider/model] [--skill-model provider/model] | install|uninstall|status|open|stop [--plugin-dir DIRECTORY]')

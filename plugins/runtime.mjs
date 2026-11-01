@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { handleModelConfigRequest } from './model-config-http.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const config = JSON.parse(process.env.VIBETRACE_RUNTIME_CONFIG)
@@ -58,6 +59,10 @@ async function main() {
       res.end(JSON.stringify({ service: 'vibetrace-plugin', root, parentPid: config.parentPid, serverUrl: config.serverUrl, connectionMode: config.connectionMode, reportedServerUrl: config.reportedServerUrl, workerPort }))
       return
     }
+    if (pathname === '/__vibetrace/model-config') {
+      void handleModelConfigRequest(req, res, stateFile)
+      return
+    }
     if (matches(pathname, workerPaths)) {
       if (!workerPort) { res.writeHead(503); res.end('VibeTrace worker starting'); return }
       return proxy(req, res, `http://127.0.0.1:${workerPort}`, false)
@@ -94,6 +99,9 @@ async function main() {
         MEMORY_WORKER_PORT: '0', OPENCODE_BASE: runtimeUrl,
         OPENCODE_DIRECTORY: config.directory,
         OPENCODE_SERVER_PASSWORD: config.password, OPENCODE_SERVER_USERNAME: config.username,
+        VIBETRACE_MODEL_CONFIG_FILE: resolve(dirname(stateFile), 'config.json'),
+        VIBETRACE_MODEL_BACKGROUND_OVERRIDE: config.modelOverrides?.background || '',
+        VIBETRACE_MODEL_SKILL_OVERRIDE: config.modelOverrides?.skill || '',
       },
     })
     const timeout = setTimeout(() => reject(new Error('Python worker startup timed out; see runtime log')), 20000)

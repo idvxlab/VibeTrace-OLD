@@ -1,12 +1,12 @@
 {
   "name": "@xiaokeyan/opencode-v2-vibetrace",
   "description": "Real-time monitoring, intervention, and skill evolution for OpenCode",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.1",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
-    "tag": "next",
+    "tag": "latest",
     "registry": "https://registry.npmjs.org/"
   },
   "homepage": "https://github.com/idvxlab/VibeTrace#readme",

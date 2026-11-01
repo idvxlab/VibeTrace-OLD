@@ -31,6 +31,7 @@ import {
   sameDirectory,
 } from './utils/sessionFolders'
 import { resolveVibeTraceDefaultModelRef } from './config/opencodeDefaults'
+import { latestMessageError, openCodeErrorMessage, sessionFailureFromEvent, sessionRetryFromEvent, type SessionRetry } from './utils/opencodeErrors'
 import type {
   MappedAction,
   OcMessage,
@@ -385,6 +386,9 @@ function App() {
   const [sessions, setSessions] = useState<OcSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string>('')
   const [messages, setMessages] = useState<OcMessage[]>([])
+  const [sessionRetries, setSessionRetries] = useState<Record<string, SessionRetry>>({})
+  const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({})
+  const [dismissedHistoryErrors, setDismissedHistoryErrors] = useState<Record<string, boolean>>({})
   const [todos, setTodos] = useState<OcTodo[]>([])
   const [todosSnapshotAtMessageIndex, setTodosSnapshotAtMessageIndex] = useState<TodosSnapshotMap>({})
   const [loading, setLoading] = useState(false)
@@ -1343,6 +1347,28 @@ function App() {
       const payload = event?.payload || event
       const eventType = sseEventTypeFromRaw(event) ?? payload?.type
       if (!eventType) return
+      const retryStatus = sessionRetryFromEvent(event)
+      if (retryStatus) {
+        setSessionRetries(prev => {
+          const next = { ...prev }
+          if (retryStatus.retry) next[retryStatus.sessionID] = retryStatus.retry
+          else delete next[retryStatus.sessionID]
+          return next
+        })
+      }
+      const failure = sessionFailureFromEvent(event)
+      if (failure) {
+        setSessionRetries(prev => {
+          const next = { ...prev }
+          delete next[failure.sessionID]
+          return next
+        })
+        setSessionErrors(prev => ({ ...prev, [failure.sessionID]: failure.message }))
+        if (selectedSessionIdRef.current === failure.sessionID) {
+          if (sendingSessionRef.current === failure.sessionID) sendingSessionRef.current = null
+          setWaitingForAssistantReply(false)
+        }
+      }
       const isNoisyDelta =
         eventType === 'message.part.delta' || eventType === 'session.next.compaction.delta'
       if (!isNoisyDelta) debugLog('[VibeTrace][SSE event]', eventType, event)
@@ -2382,7 +2408,18 @@ function App() {
       sid = created.id
       dir = created.directory
     }
+    setSessionRetries(prev => {
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
     sendingSessionRef.current = sid
+    setDismissedHistoryErrors(prev => ({ ...prev, [sid]: true }))
+    setSessionErrors(prev => {
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
     const text = buildUserMessageWithGuidance(payload.combinedText)
     const images = payload.imageParts
     const rawUserPrompt = payload.combinedText.trim()
@@ -2440,7 +2477,7 @@ function App() {
           }
         }
       } catch (e) {
-        window.alert(`Send failed: ${e instanceof Error ? e.message : String(e)}`)
+        setSessionErrors(prev => ({ ...prev, [sid]: openCodeErrorMessage(e) || 'The OpenCode request failed.' }))
         if (sendingSessionRef.current === sid) sendingSessionRef.current = null
         if (selectedSessionIdRef.current === sid) setWaitingForAssistantReply(false)
       }
@@ -2856,6 +2893,9 @@ function App() {
       {/* Sidebar: workspaces + sessions */}
       <Sidebar
         sessionsInFolder={sessionsInFolder}
+        sessionErrors={selectedSessionId && !sessionErrors[selectedSessionId] && !dismissedHistoryErrors[selectedSessionId] && latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId))
+          ? { ...sessionErrors, [selectedSessionId]: latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId))! }
+          : sessionErrors}
         directories={directories}
         selectedDirectory={selectedDirectory}
         onSelectDirectory={handleSelectDirectory}
@@ -2907,6 +2947,8 @@ function App() {
             }}
           >
             <MessagePanel
+              sessionRetry={sessionRetries[selectedSessionId]}
+              sessionError={sessionErrors[selectedSessionId] || (dismissedHistoryErrors[selectedSessionId] ? null : latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId)))}
               canStartSession={apiConnected && !!selectedDirectory && !selectedSessionId && sessionsInFolder.length === 0 && !directoryLoading}
               composerBusy={creatingSession || directoryLoading}
               composerContextKey={selectedDirectory}

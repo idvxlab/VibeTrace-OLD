@@ -86,7 +86,7 @@ separate actions; building the source does not replace an installed npm package.
 After publication, the user command is:
 
 ```sh
-opencode plugin add @xiaokeyan/opencode-v2-vibetrace@1.0.0-beta.2
+npx --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
 ```
 
 ## Validation

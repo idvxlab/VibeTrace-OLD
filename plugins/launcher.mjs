@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { findPython, findNode } from './environment.mjs'
+import { workerModelEnvironment } from './model-config.mjs'
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 function defaultRuntimeDir() {
@@ -64,6 +65,7 @@ async function start(ctx, serverUrl, username, password, key, options) {
   const stateFile = resolve(runtimeDir, `${key}.json`)
   const current = await liveState(stateFile)
   if (current) return current
+  const modelEnvironment = workerModelEnvironment(runtimeDir, options)
   const logFile = resolve(runtimeDir, `${key}.log`)
   const log = openSync(logFile, 'a', 0o600)
   const endpointKey = createHash('sha256').update(serverUrl).digest('hex').slice(0, 16)
@@ -73,8 +75,12 @@ async function start(ctx, serverUrl, username, password, key, options) {
     dataDir: resolve(runtimeDir, 'data', endpointKey),
     connectionMode: ctx.vibetraceConnectionMode || 'direct',
     reportedServerUrl: ctx.vibetraceReportedServerUrl || serverUrl,
+    modelOverrides: {
+      background: options.backgroundModel || process.env.MW_OPENCODE_MODEL || '',
+      skill: options.skillEvolutionModel || process.env.MW_SKILL_EVOLVE_MODEL || process.env.OPENCODE_MODEL || '',
+    },
   }
-  const child = spawn(node, [resolve(root, 'plugins/runtime.mjs')], { cwd: root, detached: true, stdio: ['ignore', log, log], env: { ...process.env, VIBETRACE_RUNTIME_CONFIG: JSON.stringify(config) } })
+  const child = spawn(node, [resolve(root, 'plugins/runtime.mjs')], { cwd: root, detached: true, stdio: ['ignore', log, log], env: { ...process.env, ...modelEnvironment, VIBETRACE_RUNTIME_CONFIG: JSON.stringify(config) } })
   closeSync(log)
   let failure
   child.on('error', e => { failure = e })

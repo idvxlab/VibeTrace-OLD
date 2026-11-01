@@ -3,6 +3,7 @@ import { SHOW_COMPOSER_MODEL_UI } from '../config/featureFlags'
 import { COMPOSER_MODEL_DOM_ID, MAIN_COLUMN_BOTTOM_INSET_PX } from '../config/storageKeys'
 import type { OcComposerModelOption } from '../services/opencodeApi'
 import { prepareOutgoingFromFiles } from '../utils/messageAttachments'
+import BackgroundModelSettings from './BackgroundModelSettings'
 
 export type MessageSendPayload = {
   combinedText: string
@@ -319,6 +320,8 @@ export default function MessageInput({
               ))}
             </select>
           )}
+
+          <BackgroundModelSettings models={composerModelOptions} />
 
           <button
             type="button"

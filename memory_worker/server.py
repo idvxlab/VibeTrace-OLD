@@ -115,6 +115,33 @@ MW_DEFAULT_MODEL_REF = (
 )
 
 
+def refresh_saved_model_settings() -> None:
+    """Pick up dashboard changes for the next internal task without restarting OpenCode."""
+    path = os.environ.get("VIBETRACE_MODEL_CONFIG_FILE", "").strip()
+    if not path:
+        return
+    try:
+        saved = json.loads(Path(path).read_text(encoding="utf-8")) if Path(path).exists() else {}
+        if not isinstance(saved, dict):
+            return
+    except (OSError, ValueError):
+        return
+    background = (
+        os.environ.get("VIBETRACE_MODEL_BACKGROUND_OVERRIDE", "").strip()
+        or str(saved.get("backgroundModel") or "").strip()
+        or "opencode/big-pickle"
+    )
+    skill = (
+        os.environ.get("VIBETRACE_MODEL_SKILL_OVERRIDE", "").strip()
+        or str(saved.get("skillEvolutionModel") or "").strip()
+        or background
+    )
+    global MW_DEFAULT_MODEL_REF
+    MW_DEFAULT_MODEL_REF = background
+    from skill_evolve import config as skill_config
+    skill_config._DEFAULT["opencode"]["model"] = skill
+
+
 
 def parse_worker_port() -> int:
     if os.environ.get("MEMORY_WORKER_PORT", "").strip().isdigit():
@@ -669,7 +696,8 @@ def run_task_switch_judge(
         "00a-task-switch",
         directory=directory,
         parent_session_id=None,
-        retry_with_new_session=True,
+        retry_with_new_session=False,
+        max_attempts=1,
     )
     parsed = _parse_task_switch_decision(
         str(llm_out.get("rawText") or ""),
@@ -2942,8 +2970,8 @@ def run_error_diagnosis_for_trace(
                 "03-error-diagnosis",
                 directory=effective_directory,
                 parent_session_id=parent_session_id or session_id,
-                retry_with_new_session=True,
-                max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
+                retry_with_new_session=False,
+                max_attempts=1,
             )
             write_json(run_dir / "04-error-diagnosis-raw.json", llm_out)
             parsed = try_parse_json_value(str(llm_out.get("rawText") or ""))
@@ -4423,6 +4451,25 @@ def parse_model_ref_to_body(ref: str) -> dict[str, str]:
     return {"providerID": provider_id, "modelID": model_id}
 
 
+def opencode_error_message(error: Any) -> str | None:
+    if isinstance(error, str):
+        text = error.strip()
+        if text.startswith(("{", "[")):
+            try:
+                return opencode_error_message(json.loads(text))
+            except (ValueError, TypeError):
+                pass
+        return text or None
+    if not isinstance(error, dict):
+        return None
+    data = error.get("data") if isinstance(error.get("data"), dict) else {}
+    for candidate in (data.get("message"), error.get("message"), error.get("error"), data.get("responseBody")):
+        message = opencode_error_message(candidate)
+        if message:
+            return message
+    return str(error["name"]) if error.get("name") else None
+
+
 def opencode_send_message(
     session_id: str,
     text: str,
@@ -4430,6 +4477,7 @@ def opencode_send_message(
     *,
     model: str | None = None,
 ) -> None:
+    refresh_saved_model_settings()
     model_ref = (model or "").strip() or MW_DEFAULT_MODEL_REF
     body = {
         "parts": [{"type": "text", "text": text}],
@@ -4444,6 +4492,15 @@ def opencode_send_message(
     )
     if status != 200:
         raise RuntimeError(f"send message failed: {status} {raw}")
+    try:
+        response = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        response = {}
+    if isinstance(response, dict):
+        info = response.get("info") if isinstance(response.get("info"), dict) else {}
+        failure = opencode_error_message(info.get("error") or response.get("error"))
+        if failure:
+            raise RuntimeError(f"OpenCode: {failure}")
 
 
 def _assistant_message_ids(messages: list[dict[str, Any]]) -> set[str]:
@@ -4472,6 +4529,7 @@ def opencode_generate_text(
     retry_prompt: str | None = None,
 ) -> dict[str, Any]:
     del retry_prompt  # new-session retries always resend the original prompt
+    refresh_saved_model_settings()
     if retry_in_session_on_timeout is not None:
         retry_with_new_session = bool(retry_in_session_on_timeout)
     model_ref = (model or "").strip() or MW_DEFAULT_MODEL_REF
@@ -4651,6 +4709,10 @@ def wait_assistant_stop_message(
             mid = info.get("id")
             if not isinstance(mid, str) or mid in before_ids:
                 continue
+            if info.get("role") == "assistant" and info.get("error"):
+                failure = opencode_error_message(info["error"])
+                if failure:
+                    raise RuntimeError(f"OpenCode: {failure}")
             if is_assistant_stop_message(m):
                 fresh.append(m)
         if fresh:
@@ -5278,6 +5340,7 @@ def _run_skill_evolve_pipeline(
     parent_session_id: str | None,
     pool_summary: dict[str, Any],
 ) -> dict[str, Any]:
+    refresh_saved_model_settings()
     try:
         from skill_evolve import run_skill_evolve_pipeline
     except Exception as e:
