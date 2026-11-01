@@ -1,6 +1,6 @@
 # VibeTrace: See how your agents think
 
-Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding.
+Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding
 
 A web dashboard for **[OpenCode](https://opencode.ai/)** that connects to a local OpenCode HTTP server (REST + Server-Sent Events). VibeTrace gives developers a live, layered view of agent execution and supports **action-level process intervention** — fork, inspect, and steer runs without losing trajectory context.
 
@@ -47,183 +47,49 @@ Analysis is triggered through the dashboard and uses models configured in OpenCo
 
 ---
 
-## Installation & Running
+## Installation
 
-### Install the plugin
+Requires OpenCode, Node.js 20+, and Python 3.9+.
+The commands below work on macOS, Windows, and Linux.
 
-**Requirements:** Node.js 20+, Python 3.9+, and OpenCode.
-First check your OpenCode version:
+First, check your OpenCode version:
 
 ```sh
 opencode --version
 ```
 
-**OpenCode V1: `1.18.29` or newer within `1.x`** — macOS / Linux / Windows:
+### OpenCode V1 (`1.x`)
 
 ```sh
-opencode plugin @xiaokeyan/opencode-vibetrace@1.0.0 -g
+npx --yes @xiaokeyan/opencode-vibetrace@1.0.2 setup
 ```
 
-For an older V1 release, update within the V1 line first.
-
-**OpenCode V2: `2.x`** — VibeTrace 1.0.1, tested with the 2.1.4 terminal client:
-
-macOS / Linux:
+### OpenCode V2 (`2.x`)
 
 ```sh
 npx --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
 ```
 
-Windows PowerShell / Command Prompt:
-
-```powershell
-npx.cmd --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
-```
-
-Fully restart OpenCode after installation. For V2, restart its shared service
-with `opencode service restart` first. VibeTrace starts its services and opens
-the dashboard automatically. Native Windows end-to-end validation is pending.
-
-### Optional: choose a background analysis model
-
-In the V2 dashboard, click the gear beside the chat model selector to open
-**Background model settings**. Set the background analysis model and optionally
-set a separate skill evolution model, then click **Save**. Use `providerID/modelID`
-for a model already configured in OpenCode. A blank skill evolution model follows
-the background model. Saved changes apply to new internal tasks; running tasks
-keep their model, and the chat model is selected separately. Explicit plugin
-options or environment overrides take priority over dashboard settings.
-
-Both release lines use OpenCode's configured models. Background analysis defaults
-to `opencode/big-pickle`. If it is unavailable or its quota is exhausted, choose a
-working provider/model already configured in your OpenCode account.
-
-macOS / Linux:
-
-```bash
-MW_OPENCODE_MODEL='your-provider/your-model' \
-MW_SKILL_EVOLVE_MODEL='your-provider/your-model' \
-opencode
-```
-
-Windows PowerShell:
-
-```powershell
-$env:MW_OPENCODE_MODEL = 'your-provider/your-model'
-$env:MW_SKILL_EVOLVE_MODEL = 'your-provider/your-model'
-opencode
-```
-
-Windows Command Prompt:
-
-```bat
-set "MW_OPENCODE_MODEL=your-provider/your-model"
-set "MW_SKILL_EVOLVE_MODEL=your-provider/your-model"
-opencode
-```
-
-These settings apply to the current terminal and its child processes. Fully exit
-the previous OpenCode process or V2 service before restarting with new settings.
-Use the provider ID and model ID separated by `/`. OpenCode supplies credentials;
-background requests consume the selected provider's quota. The dashboard's chat
-model is selected separately in the composer.
-
-### Runtime and logs
-
-Closing the browser leaves VibeTrace's services running. Stopping the owning
-OpenCode process stops its VibeTrace services.
-
-- **V1:** restart the owning OpenCode process to reopen the dashboard, or use its
-  previous URL while the service is still running.
-- **V2:** each new terminal client opens the dashboard through the TUI plugin,
-  including when the shared OpenCode service is already running. In the updated
-  V2 dashboard, an empty workspace accepts input directly and creates its first
-  session when the first message is sent. Opening a folder alone adds no empty
-  session; the **New session** button remains available.
-
-Set `VIBETRACE_NO_BROWSER=1` to suppress automatic browser opening. Runtime logs
-and analysis data are stored locally:
-
-- **macOS:** `~/Library/Application Support/VibeTrace`
-- **Linux:** `~/.local/state/vibetrace` (or `$XDG_STATE_HOME/vibetrace`)
-- **Windows:** `%LOCALAPPDATA%\VibeTrace`
+Then restart OpenCode (fully quit and reopen Desktop) and open your project as usual.
+For V2, run `opencode service restart` before reopening OpenCode.
+VibeTrace opens its dashboard automatically.
 
 ### Uninstall
 
-**V1:** remove `@xiaokeyan/opencode-vibetrace` from your `opencode.json(c)` plugin list.
+**OpenCode V1:**
 
-**V2:** remove the installed version (replace `1.0.1` if different):
+```sh
+npx --yes @xiaokeyan/opencode-vibetrace@1.0.2 uninstall
+```
+
+**OpenCode V2:**
 
 ```sh
 opencode plugin remove @xiaokeyan/opencode-v2-vibetrace@1.0.1
 ```
 
-**Local development install:** run from the source checkout:
-
-```sh
-npm run plugin:uninstall
-```
-
-Restart OpenCode afterwards (for V2, run `opencode service restart`).
-Your chat history, analysis data, and skills are preserved.
-
-### Develop from source — choose the matching branch
-
-The repository contains two source branches, each building its own package.
-Switching README content does not switch implementations. Use a separate clone
-for each line if you want both development checkouts available at once.
-
-**V1 source:**
-
-```sh
-git clone -b V1.5 https://github.com/idvxlab/VibeTrace.git VibeTrace-v1
-cd VibeTrace-v1
-npm install
-npm run plugin:install
-```
-
-**V2 source:**
-
-```sh
-git clone -b V2 https://github.com/idvxlab/VibeTrace.git VibeTrace-v2
-cd VibeTrace-v2
-npm install
-npm run plugin:install
-```
-
-Local installation builds the dashboard and creates a managed link to the checkout.
-Keep that checkout in place. Remove an existing VibeTrace npm registration before
-using a local link to avoid loading two copies. Restart the matching OpenCode
-process/service after installing or changing the plugin.
-
-For V2, the checkout also includes platform installer entrypoints after a build:
-
-- macOS / Linux: `bash scripts/install.sh --local`
-- Windows PowerShell: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 -Local`
-- Windows Command Prompt: `scripts\install.cmd --local`
-
-All three call the same V2 setup logic. There is no separate Windows npm package
-or hosted VibeTrace installer download URL. Interpreter-discovery simulation is
-covered by tests; native Windows validation remains outstanding.
-
-Useful commands available in both source lines include `npm run plugin:status`,
-`npm run plugin:open`, `npm run build:plugin`, and `npm run test:plugin`. Check the
-selected branch's `package.json` for its supported commands and test scope.
-
-V2-specific verification uses isolated configuration and local provider fixtures:
-
-```sh
-npm run test:installer
-npm run test:composer
-npm run test:plugin
-```
-
-Build the dashboard before `test:composer`; it runs Chrome against a local API
-fixture. `test:plugin` exercises a real OpenCode V2 server with a local model
-fixture. Neither requires sending test prompts to an external model. The runtime
-suite has Unix-specific fixtures; it does not prove full Windows or V2 desktop
-interaction. See [V2 implementation and verification](https://github.com/idvxlab/VibeTrace/blob/V2/docs/opencode-v2.md).
-
+Restart OpenCode afterwards. For V2, also run `opencode service restart`.
+Your chat history and VibeTrace data are preserved.
 
 ---
 
