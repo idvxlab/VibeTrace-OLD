@@ -8,6 +8,7 @@ import type {
 } from '../types/opencode'
 import { normalizeSessionDirectory, sameDirectory } from '../utils/sessionFolders'
 import { resolveVibeTraceDefaultModelRef } from '../config/opencodeDefaults'
+import { openCodeErrorMessage } from '../utils/opencodeErrors'
 
 /**
  * OpenCode HTTP base URL — injected at build time by `vite.config.ts`:
@@ -438,13 +439,17 @@ export async function sendMessage(
     body: JSON.stringify(reqBody),
   })
   const bodyText = await res.text()
-  if (!res.ok) throw new Error(`Failed to send message: ${res.status} ${bodyText}`)
+  if (!res.ok) throw new Error(openCodeErrorMessage(bodyText) || `OpenCode request failed (HTTP ${res.status})`)
   const ct = res.headers.get('content-type') || ''
   if (ct.includes('text/html') || /^\s*</i.test(bodyText)) {
     throw new Error(
       `[OpenCode] POST /message returned HTML instead of JSON — check the path. Expected /session/<sessionId>/message (not /session}/). URL: ${url}`,
     )
   }
+  let response: { info?: { error?: unknown }; error?: unknown } | undefined
+  try { response = bodyText.trim() ? JSON.parse(bodyText) : undefined } catch { /* Some hosts return an empty response. */ }
+  const failure = openCodeErrorMessage(response?.info?.error ?? response?.error)
+  if (failure) throw new Error(failure)
 }
 
 export async function abortSession(sessionId: string, directory?: string): Promise<void> {

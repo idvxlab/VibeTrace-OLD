@@ -47,6 +47,7 @@ export type PartType =
 
 export interface OcMessageInfo {
   role: 'user' | 'assistant'
+  error?: unknown
   content?: string  // plaintext for user rows
   time: {
     created: number

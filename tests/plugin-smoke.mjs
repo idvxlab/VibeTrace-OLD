@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFil
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
-import { needsSdkBridge } from '../plugins/vibetrace.mjs'
+import { needsSdkBridge } from '../plugins/v1-context.mjs'
 import { nodeExecutable } from '../plugins/launcher.mjs'
 // Desktop exposes an Electron helper as execPath; never attempt to execute it.
 const forbiddenHelper = resolve(tmpdir(), 'not-a-node-electron-helper')
@@ -17,7 +17,8 @@ assert.throws(() => nodeExecutable('/usr/bin/true'), /could not start Node.js/)
 const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
 assert.equal(packageJson.main, './plugins/vibetrace.mjs', 'OpenCode v1 needs a server main entrypoint')
 assert.equal(packageJson.exports?.['./server'], packageJson.main, 'server subpath should resolve to the same plugin entrypoint')
-assert.equal(typeof (await import('../plugins/vibetrace.mjs')).default?.server, 'function', 'server entrypoint exports a V1 plugin module')
+assert.deepEqual(Object.keys(await import('../plugins/vibetrace.mjs')), ['default'], 'old V1 invokes every export')
+assert.equal(typeof (await import('../plugins/vibetrace.mjs')).default, 'function', 'old V1 needs a callable entrypoint')
 assert.equal(needsSdkBridge(new URL('http://localhost:4096')), true)
 assert.equal(needsSdkBridge(new URL('http://127.0.0.1:4096')), false)
 assert.equal(needsSdkBridge(new URL('http://127.0.0.1:54321')), false)

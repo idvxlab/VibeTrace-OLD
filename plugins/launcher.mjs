@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, openSync, closeSync } from 'node:f
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
+import { workerModelEnvironment } from './model-config.mjs'
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 function defaultRuntimeDir() {
@@ -13,8 +14,19 @@ function defaultRuntimeDir() {
 }
 export const runtimeDir = process.env.VIBETRACE_RUNTIME_DIR || defaultRuntimeDir()
 export function pythonExecutable(configured) {
-  const python = configured || process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
-  return execFileSync(python, ['-c', 'import sys; assert sys.version_info >= (3, 9), "Python 3.9+ required"; print(sys.executable)'], { encoding: 'utf8' }).trim()
+  const explicit = configured || process.env.PYTHON
+  const candidates = explicit ? [[explicit, []]] : process.platform === 'win32'
+    ? [['python', []], ['py', ['-3']], ['python3', []]] : [['python3', []], ['python', []]]
+  for (const [command, prefix] of candidates) {
+    try {
+      const executable = execFileSync(command, [...prefix, '-c', 'import sys,http.server,urllib.request,sqlite3; assert sys.version_info >= (3, 9); print(sys.executable)'], {
+        encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHON_MANAGER_AUTOMATIC_INSTALL: 'false' },
+      }).trim()
+      if (executable) return executable
+    } catch { /* Only use another candidate when no explicit override was set. */ }
+  }
+  throw new Error('VibeTrace requires Python 3.9+. Install Python and reopen your terminal, or set PYTHON to its executable path (not a command such as "py -3").')
 }
 export function nodeExecutable(configured, host = process) {
   // Electron utility processes expose their helper executable as execPath.
@@ -41,12 +53,12 @@ export function openBrowser(url) {
   child.on('error', () => {})
   child.unref()
 }
-export async function liveState(file) {
+export async function liveState(file, expectedRoot = root) {
   try {
     const state = JSON.parse(readFileSync(file, 'utf8'))
     const response = await fetch(`${state.url}/__vibetrace/status`, { signal: AbortSignal.timeout(1000) })
     const actual = await response.json()
-    if (actual.service === 'vibetrace-plugin' && actual.root === root && actual.parentPid === state.parentPid && actual.serverUrl === state.serverUrl) return state
+    if (actual.service === 'vibetrace-plugin' && actual.root === expectedRoot && state.root === expectedRoot && actual.parentPid === state.parentPid && actual.serverUrl === state.serverUrl) return state
   } catch {}
   return null
 }
@@ -79,6 +91,7 @@ async function start(ctx, serverUrl, username, password, key, options) {
   const stateFile = resolve(runtimeDir, `${key}.json`)
   const current = await liveState(stateFile)
   if (current) return current
+  const modelEnvironment = workerModelEnvironment(runtimeDir, options)
   const logFile = resolve(runtimeDir, `${key}.log`)
   const log = openSync(logFile, 'a', 0o600)
   const endpointKey = createHash('sha256').update(serverUrl).digest('hex').slice(0, 16)
@@ -88,8 +101,12 @@ async function start(ctx, serverUrl, username, password, key, options) {
     dataDir: resolve(runtimeDir, 'data', endpointKey),
     connectionMode: ctx.vibetraceConnectionMode || 'direct',
     reportedServerUrl: ctx.vibetraceReportedServerUrl || serverUrl,
+    modelOverrides: {
+      background: options.backgroundModel || process.env.MW_OPENCODE_MODEL || '',
+      skill: options.skillEvolutionModel || process.env.MW_SKILL_EVOLVE_MODEL || process.env.OPENCODE_MODEL || '',
+    },
   }
-  const child = spawn(node, [resolve(root, 'plugins/runtime.mjs')], { cwd: root, detached: true, stdio: ['ignore', log, log], env: { ...process.env, VIBETRACE_RUNTIME_CONFIG: JSON.stringify(config) } })
+  const child = spawn(node, [resolve(root, 'plugins/runtime.mjs')], { cwd: root, detached: true, stdio: ['ignore', log, log], env: { ...process.env, ...modelEnvironment, VIBETRACE_RUNTIME_CONFIG: JSON.stringify(config) } })
   closeSync(log)
   let failure
   child.on('error', e => { failure = e })

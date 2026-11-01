@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type RefObject, type WheelEvent } from 'react'
 import type { OcMessage, OcPendingPermissionRequest, OcPendingQuestionRequest, OcPermissionReply, OcTodo } from '../types/opencode'
 import type { CanonicalTodo, LatestTodowriteBatchProgress } from '../utils/todoRegistry'
+import { sessionRetryMessage, type SessionRetry } from '../utils/opencodeErrors'
 import MessageBubble from './MessageBubble'
 import TodoPanel from './TodoPanel'
 import MessageInput, { type MessageSendPayload } from './MessageInput'
@@ -23,6 +24,12 @@ interface MessagePanelProps {
   /** User message sent; polling until assistant reply arrives (SSE may lag) */
   waitingForAssistantReply?: boolean
   sessionId: string
+  sessionRetry?: SessionRetry | null
+  sessionError?: string | null
+  /** An empty workspace can create its first conversation when the user sends. */
+  canStartSession?: boolean
+  composerBusy?: boolean
+  composerContextKey?: string
   sessionTitle?: string
   onRefresh: () => void
   onSendMessage: (payload: MessageSendPayload) => Promise<void>
@@ -80,6 +87,11 @@ export default function MessagePanel({
   loading,
   waitingForAssistantReply = false,
   sessionId,
+  sessionError: failureMessage = null,
+  sessionRetry = null,
+  canStartSession = false,
+  composerBusy = false,
+  composerContextKey,
   sessionTitle,
   onRefresh,
   onSendMessage,
@@ -113,6 +125,15 @@ export default function MessagePanel({
   sessionDataFetchError = null,
   onRetrySessionsBootstrap,
 }: MessagePanelProps) {
+  const [retryNow, setRetryNow] = useState(Date.now)
+  useEffect(() => {
+    if (!sessionRetry) return
+    setRetryNow(Date.now())
+    const timer = window.setInterval(() => setRetryNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [sessionRetry])
+  const sessionError = sessionRetry ? sessionRetryMessage(sessionRetry, retryNow) : failureMessage
+
   const hasInlineQuestion = messagesHaveOpenQuestionWithInput(messages)
   const blockComposerForQuestion =
     hasInlineQuestion ||
@@ -215,21 +236,21 @@ export default function MessagePanel({
   useEffect(() => {
     const finishedLoad = wasLoadingRef.current && !loading
     wasLoadingRef.current = loading
-    if (!finishedLoad || !sessionId || messages.length === 0) return
+    if (!finishedLoad || !sessionId || (messages.length === 0 && !sessionError)) return
     setStickToBottom(true)
     requestAnimationFrame(() => {
       scrollMessagesToBottom()
     })
-  }, [loading, sessionId, messages.length, messageListScrollRef])
+  }, [loading, sessionId, messages.length, sessionError, messageListScrollRef])
 
   /** Follow newly appended / streaming content while the viewport is pinned to the bottom. */
   useEffect(() => {
-    if (!stickToBottomRef.current || loading || messages.length === 0) return
+    if (!stickToBottomRef.current || loading || (messages.length === 0 && !sessionError)) return
     requestAnimationFrame(() => {
       if (!stickToBottomRef.current) return
       scrollMessagesToBottom()
     })
-  }, [messages, waitingForAssistantReply, loading, messageListScrollRef])
+  }, [messages, sessionError, waitingForAssistantReply, loading, messageListScrollRef])
 
   /** When the user sends a message, re-pin and jump to the latest turn. */
   const wasWaitingRef = useRef(waitingForAssistantReply)
@@ -386,12 +407,15 @@ export default function MessagePanel({
             <div style={{ display: 'flex', justifyContent: 'center', padding: '32px', color: '#888', fontSize: 12 }}>
               Loading…
             </div>
-          ) : messages.length === 0 ? (
+          ) : messages.length === 0 && !sessionError ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 12 }}>
-              Pick a session to start chatting
+              {sessionId || canStartSession
+                ? 'Send a message to start a conversation'
+                : 'Select a folder or session to start chatting'}
             </div>
           ) : (
-            messages.map((msg, idx) => {
+            <>
+            {messages.map((msg, idx) => {
               const hl = highlightMessageIndices?.has(idx) ?? false
               return (
                 <div
@@ -421,7 +445,14 @@ export default function MessagePanel({
                   />
                 </div>
               )
-            })
+            })}
+            {sessionError && (
+              <div role="alert" style={{ alignSelf: 'flex-start', maxWidth: '85%', margin: '10px 0 16px', padding: '12px 14px', borderRadius: 10, background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412', fontSize: 12, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{sessionRetry ? 'OpenCode request retrying' : 'OpenCode request failed'}</div>
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{sessionError}</div>
+              </div>
+            )}
+            </>
           )}
         </div>
         {!pinnedToLatest && !loading && messages.length > 0 ? (
@@ -508,8 +539,9 @@ export default function MessagePanel({
       {/* Composer */}
       <div style={{ flexShrink: 0 }}>
         <MessageInput
+          key={composerContextKey}
           onSend={onSendMessage}
-          disabled={!sessionId || loading || questionSubmitting || permissionSubmitting || blockComposerForQuestion || blockComposerForPermission}
+          disabled={(!sessionId && !canStartSession) || composerBusy || loading || questionSubmitting || permissionSubmitting || blockComposerForQuestion || blockComposerForPermission}
           onAbort={onAbortMessage}
           isRunning={agentBusy}
           aborting={aborting}

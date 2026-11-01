@@ -25,7 +25,7 @@ async function start(ctx) {
       if (!res.writableEnded) abort.abort()
     })
     try {
-      const url = new URL(config.baseUrl || ctx.serverUrl)
+      const url = new URL(config.baseUrl || ctx.serverUrl || 'http://localhost:4096')
       const incoming = new URL(req.url, 'http://localhost')
       url.pathname = incoming.pathname
       url.search = incoming.search

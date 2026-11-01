@@ -1,6 +1,6 @@
 # VibeTrace: See how your agents think
 
-**Version 1.0.0** · Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding
+Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding
 
 A web dashboard for **[OpenCode](https://opencode.ai/)** that connects to a local OpenCode HTTP server (REST + Server-Sent Events). VibeTrace gives developers a live, layered view of agent execution and supports **action-level process intervention** — fork, inspect, and steer runs without losing trajectory context.
 
@@ -47,149 +47,49 @@ Analysis is triggered through the dashboard and uses models configured in OpenCo
 
 ---
 
-## Installation & Running
+## Installation
 
-### Install the plugin
+Requires OpenCode, Node.js 20+, and Python 3.9+.
+The commands below work on macOS, Windows, and Linux.
 
-**Requirements:** [OpenCode CLI](https://opencode.ai/download), Node.js 20+, and Python 3.9+ available on your PATH. Tested with OpenCode CLI 1.18.16. The launcher also handles Electron-based Desktop hosts by using a standalone Node.js runtime.
+First, check your OpenCode version:
 
-Run this command in any terminal, from any directory:
-
-```bash
-opencode plugin @xiaokeyan/opencode-vibetrace@1.0.0 -g
-```
-
-Then restart OpenCode and open your project as usual:
-
-```bash
-opencode
-```
-
-VibeTrace automatically starts its local services and opens the dashboard in your browser. You do not need to clone this repository or start the frontend and backend yourself. The global installation applies across projects.
-
-### Optional: choose a background analysis model
-
-Background analysis defaults to `opencode/big-pickle`. If that model is unavailable or its quota is exhausted, use a working model already configured in your OpenCode account:
-
-```bash
-MW_OPENCODE_MODEL='your-provider/your-model' \
-MW_SKILL_EVOLVE_MODEL='your-provider/your-model' \
-opencode
-```
-
-This macOS/Linux example sets the model for this launch only. Fully exit the previous OpenCode process before restarting with these settings. Use the provider ID and model ID from OpenCode, separated by `/`. OpenCode supplies the existing provider credentials; no API key needs to be added to the plugin. Background requests consume the selected provider's quota. The chat model is selected separately in the dashboard composer.
-
-### Runtime and logs
-
-Closing the browser leaves the services running. Exiting the owning OpenCode process stops its services. To reopen the dashboard, use its previous URL while the services are running, or restart OpenCode to open it automatically.
-
-Runtime logs and analysis data are stored locally:
-
-- **macOS:** `~/Library/Application Support/VibeTrace`
-- **Linux:** `~/.local/state/vibetrace` (or `$XDG_STATE_HOME/vibetrace`)
-- **Windows:** `%LOCALAPPDATA%\VibeTrace`
-
-To uninstall, remove the VibeTrace package entry from the OpenCode configuration updated by the installer, then restart OpenCode. On macOS/Linux, check `~/.config/opencode/opencode.jsonc` or `opencode.json`. Keep other plugin entries intact. This preserves your chat history and VibeTrace data.
-
-<details>
-<summary>Development: run from a local checkout</summary>
-
-#### Manual development mode
-
-VibeTrace runs as three local processes: the **OpenCode HTTP server**, the **memory-worker** (Python), and the **Vite UI**. You start each one from the command line.
-
-**Prerequisites:** [OpenCode CLI](https://opencode.ai/download), **Node.js**, and **Python 3** (`python` on Windows, `python3` on macOS/Linux).
-
-##### 1. Install OpenCode
-
-Follow the [upstream installation guide](https://opencode.ai/download), then verify:
-
-```bash
+```sh
 opencode --version
 ```
 
-##### 2. Clone and install dependencies
+### OpenCode V1 (`1.x`)
 
-```bash
-git clone -b V1.5 https://github.com/idvxlab/VibeTrace.git
-cd VibeTrace
-npm install
+```sh
+npx --yes @xiaokeyan/opencode-vibetrace@1.0.2 setup
 ```
 
-##### 3. Configure environment
+### OpenCode V2 (`2.x`)
 
-Copy the environment template. The defaults work out of the box for a local OpenCode server on port **4096** with no HTTP password:
-
-```bash
-cp .env.example .env.local
+```sh
+npx --yes @xiaokeyan/opencode-v2-vibetrace@1.0.1 setup
 ```
 
-Key settings in `.env.local` (see [`.env.example`](./.env.example) for the full list):
+Then restart OpenCode (fully quit and reopen Desktop) and open your project as usual.
+For V2, run `opencode service restart` before reopening OpenCode.
+VibeTrace opens its dashboard automatically.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OPENCODE_PROXY_TARGET` | `http://127.0.0.1:4096` | Vite dev proxy → OpenCode |
-| `OPENCODE_BASE` | `http://127.0.0.1:4096` | memory-worker → OpenCode |
-| `VITE_OPENCODE_BASE` | *(empty)* | Use Vite same-origin proxy (recommended) |
-| `VITE_MEMORY_WORKER_BASE` | *(empty)* | Worker API also proxied through Vite |
+### Uninstall
 
-If you use a different OpenCode port, update `OPENCODE_PROXY_TARGET` and `OPENCODE_BASE` to match.
+**OpenCode V1:**
 
-Do **not** set `VITE_OPENCODE_SERVER_PASSWORD` / `OPENCODE_SERVER_PASSWORD` for a normal unsecured `opencode serve`.
-
-##### 4. Start services (three terminals)
-
-Run every command below from the **VibeTrace project root** (the directory where you ran `npm install`). Keep all three processes running while you use VibeTrace.
-
-**Terminal 1 — OpenCode (backend API)**
-
-```bash
-opencode serve --port 4096
+```sh
+npx --yes @xiaokeyan/opencode-vibetrace@1.0.2 uninstall
 ```
 
-If your OpenCode install already listens on port **4096** by default, `opencode serve` alone is fine. Otherwise pass `--port 4096` so it matches `.env.local`.
+**OpenCode V2:**
 
-You should see something like:
-
-```text
-opencode server listening on http://127.0.0.1:4096
+```sh
+opencode plugin remove @xiaokeyan/opencode-v2-vibetrace@1.0.1
 ```
 
-**Terminal 2 — memory-worker (trace ingest & panel analysis)**
-
-From the project root:
-
-```bash
-npm run worker:py
-```
-
-Listens on **`http://127.0.0.1:8714`** by default.
-
-**Terminal 3 — Vite UI**
-
-From the project root:
-
-```bash
-npm run dev
-```
-
-Open **`http://127.0.0.1:5173`** in your browser.
-
-##### Daily use
-
-1. From the project root, start **Terminal 1** (`opencode serve --port 4096`), then **Terminal 2** (`npm run worker:py`), then **Terminal 3** (`npm run dev`).
-2. Use VibeTrace in the browser. Trace ingest and per-panel analysis run in the background via the worker.
-
-##### Optional environment variables
-
-| Variable | When to set |
-| --- | --- |
-| `SKILL_WRITE_ROOT` | Where analyzed skills are written |
-| `VITE_TRACE_SESSION_TURN_LIMIT` | More history turns per ingest (default `5`) |
-
-The chat model is chosen in the composer dropdown and defaults to `opencode/big-pickle`. Background analysis uses `MW_OPENCODE_MODEL`; skill evolution can override it with `MW_SKILL_EVOLVE_MODEL`.
-
-</details>
+Restart OpenCode afterwards. For V2, also run `opencode service restart`.
+Your chat history and VibeTrace data are preserved.
 
 ---
 

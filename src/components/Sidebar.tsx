@@ -9,6 +9,7 @@ interface SidebarProps {
   selectedDirectory: string
   onSelectDirectory: (dir: string) => void | Promise<void>
   selectedSessionId: string
+  sessionErrors?: Record<string, string>
   onSelectSession: (id: string) => void
   onCreateSession: () => void | Promise<void>
   creatingSession?: boolean
@@ -34,6 +35,7 @@ export default function Sidebar({
   selectedDirectory,
   onSelectDirectory,
   selectedSessionId,
+  sessionErrors = {},
   onSelectSession,
   onCreateSession,
   creatingSession,
@@ -356,9 +358,10 @@ export default function Sidebar({
                       width: 6,
                       height: 6,
                       borderRadius: '50%',
-                      background: session.id === selectedSessionId ? '#8445BC' : '#C7C7C7',
+                      background: sessionErrors[session.id] ? '#DC2626' : session.id === selectedSessionId ? '#8445BC' : '#C7C7C7',
                       flexShrink: 0,
                     }}
+                    title={sessionErrors[session.id] ? `OpenCode request failed: ${sessionErrors[session.id]}` : undefined}
                   />
                   <span
                     style={{

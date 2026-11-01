@@ -31,6 +31,7 @@ import {
   sameDirectory,
 } from './utils/sessionFolders'
 import { resolveVibeTraceDefaultModelRef } from './config/opencodeDefaults'
+import { latestMessageError, openCodeErrorMessage, sessionFailureFromEvent, sessionRetryFromEvent, type SessionRetry } from './utils/opencodeErrors'
 import type {
   MappedAction,
   OcMessage,
@@ -385,6 +386,9 @@ function App() {
   const [sessions, setSessions] = useState<OcSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string>('')
   const [messages, setMessages] = useState<OcMessage[]>([])
+  const [sessionRetries, setSessionRetries] = useState<Record<string, SessionRetry>>({})
+  const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({})
+  const [dismissedHistoryErrors, setDismissedHistoryErrors] = useState<Record<string, boolean>>({})
   const [todos, setTodos] = useState<OcTodo[]>([])
   const [todosSnapshotAtMessageIndex, setTodosSnapshotAtMessageIndex] = useState<TodosSnapshotMap>({})
   const [loading, setLoading] = useState(false)
@@ -401,6 +405,7 @@ function App() {
   )
   const [closedDirectories, setClosedDirectories] = useState<string[]>(() => loadClosedDirectories())
   const [creatingSession, setCreatingSession] = useState(false)
+  const [directoryLoading, setDirectoryLoading] = useState(false)
   /** Pending question requests keyed by session (from SSE `question.asked`) */
   const [pendingQuestions, setPendingQuestions] = useState<Record<string, OcPendingQuestionRequest>>({})
   const [questionSubmitting, setQuestionSubmitting] = useState(false)
@@ -578,6 +583,7 @@ function App() {
   }, [])
 
   const handleSelectSession = useCallback((sessionId: string) => {
+    selectedSessionIdRef.current = sessionId
     setSelectedSessionId(sessionId)
   }, [])
 
@@ -598,6 +604,9 @@ function App() {
   const [isResizingSubtaskPanel, setIsResizingSubtaskPanel] = useState(false)
   const selectedSessionIdRef = useRef(selectedSessionId)
   selectedSessionIdRef.current = selectedSessionId
+  const sessionCreationRef = useRef<Promise<OcSession> | null>(null)
+  const sendingSessionRef = useRef<string | null>(null)
+  const directorySelectionRef = useRef(0)
   const sseSyncTimerRef = useRef<number | null>(null)
 
   const getSubtaskPanelWidthBounds = useCallback(() => {
@@ -1147,7 +1156,9 @@ function App() {
     if (initialSessionsLoadedRef.current) return
     initialSessionsLoadedRef.current = true
     refreshSessions()
-      .then((data) => {
+      .then(async (data) => {
+        // A user may already have selected a workspace while the index loaded.
+        if (selectedDirectoryRef.current || selectedSessionIdRef.current) return
         const sorted = [...data]
           .filter((s) => !shouldHideSessionFromHistory(s.id, s))
           .sort((a, b) => b.time.updated - a.time.updated)
@@ -1155,6 +1166,12 @@ function App() {
           const first = sorted[0]!
           setSelectedSessionId(first.id)
           setSelectedDirectory(normalizeSessionDirectory(first.directory))
+        } else {
+          const directory = await getCurrentWorkspaceDirectory().catch(() => null)
+          if (directory && !selectedDirectoryRef.current && !selectedSessionIdRef.current) {
+            selectedDirectoryRef.current = normalizeSessionDirectory(directory)
+            setSelectedDirectory(selectedDirectoryRef.current)
+          }
         }
       })
       .catch(() => setApiConnected(false))
@@ -1174,7 +1191,7 @@ function App() {
   }, [sessions, selectedSessionId, selectedDirectory])
 
   useEffect(() => {
-    setWaitingForAssistantReply(false)
+    if (sendingSessionRef.current !== selectedSessionId) setWaitingForAssistantReply(false)
     setLatestTurnTrace(null)
   }, [selectedSessionId])
 
@@ -1330,6 +1347,28 @@ function App() {
       const payload = event?.payload || event
       const eventType = sseEventTypeFromRaw(event) ?? payload?.type
       if (!eventType) return
+      const retryStatus = sessionRetryFromEvent(event)
+      if (retryStatus) {
+        setSessionRetries(prev => {
+          const next = { ...prev }
+          if (retryStatus.retry) next[retryStatus.sessionID] = retryStatus.retry
+          else delete next[retryStatus.sessionID]
+          return next
+        })
+      }
+      const failure = sessionFailureFromEvent(event)
+      if (failure) {
+        setSessionRetries(prev => {
+          const next = { ...prev }
+          delete next[failure.sessionID]
+          return next
+        })
+        setSessionErrors(prev => ({ ...prev, [failure.sessionID]: failure.message }))
+        if (selectedSessionIdRef.current === failure.sessionID) {
+          if (sendingSessionRef.current === failure.sessionID) sendingSessionRef.current = null
+          setWaitingForAssistantReply(false)
+        }
+      }
       const isNoisyDelta =
         eventType === 'message.part.delta' || eventType === 'session.next.compaction.delta'
       if (!isNoisyDelta) debugLog('[VibeTrace][SSE event]', eventType, event)
@@ -2319,10 +2358,68 @@ function App() {
     })
   }, [selectedSessionId])
 
+  const createAndSelectSession = useCallback(async (directory?: string, forMessage = false) => {
+    if (sessionCreationRef.current) throw new Error('A conversation is already being created. Please try again.')
+    const selection = directorySelectionRef.current
+    const previousSession = selectedSessionIdRef.current
+    const workspace = selectedDirectoryRef.current
+    setCreatingSession(true)
+    const pending = createSession(directory)
+    sessionCreationRef.current = pending
+    try {
+      const created = await pending
+      const next = mergeSessionsById([sessionsRef.current, [created]])
+      sessionsRef.current = next
+      setSessions(next)
+      setApiConnected(true)
+      if (directorySelectionRef.current === selection && sameDirectory(selectedDirectoryRef.current, workspace) &&
+          (selectedSessionIdRef.current === previousSession || selectedSessionIdRef.current === created.id)) {
+        if (!workspace) {
+          selectedDirectoryRef.current = normalizeSessionDirectory(created.directory)
+          setSelectedDirectory(selectedDirectoryRef.current)
+        }
+        if (forMessage) sendingSessionRef.current = created.id
+        selectedSessionIdRef.current = created.id
+        setSelectedSessionId(created.id)
+        setMessages([])
+        setTodos([])
+        setTodosSnapshotAtMessageIndex({})
+      }
+      void refreshSessions([created.directory]).catch(() => {})
+      return created
+    } finally {
+      sessionCreationRef.current = null
+      setCreatingSession(false)
+    }
+  }, [refreshSessions])
+
   const handleSendMessage = useCallback(async (payload: MessageSendPayload) => {
-    if (!selectedSessionId) return
-    const dir = sessions.find(s => s.id === selectedSessionId)?.directory
-    const sid = selectedSessionId
+    let sid = selectedSessionIdRef.current
+    let dir = sessionsRef.current.find(s => s.id === sid)?.directory
+    if (!sid) {
+      if (directoryLoading || !apiConnected || !selectedDirectoryRef.current) {
+        throw new Error('Choose a folder and wait for it to finish loading before sending.')
+      }
+      const selection = directorySelectionRef.current
+      const created = await createAndSelectSession(selectedDirectoryRef.current, true)
+      if (directorySelectionRef.current !== selection || selectedSessionIdRef.current !== created.id) {
+        throw new Error('The selected conversation changed. Your message was not sent.')
+      }
+      sid = created.id
+      dir = created.directory
+    }
+    setSessionRetries(prev => {
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
+    sendingSessionRef.current = sid
+    setDismissedHistoryErrors(prev => ({ ...prev, [sid]: true }))
+    setSessionErrors(prev => {
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
     const text = buildUserMessageWithGuidance(payload.combinedText)
     const images = payload.imageParts
     const rawUserPrompt = payload.combinedText.trim()
@@ -2374,22 +2471,25 @@ function App() {
             )
           }
         } finally {
-          if (abortGenerationRef.current === gen) {
+          if (sendingSessionRef.current === sid) sendingSessionRef.current = null
+          if (abortGenerationRef.current === gen && selectedSessionIdRef.current === sid) {
             setWaitingForAssistantReply(false)
           }
         }
       } catch (e) {
-        window.alert(`Send failed: ${e instanceof Error ? e.message : String(e)}`)
-        setWaitingForAssistantReply(false)
+        setSessionErrors(prev => ({ ...prev, [sid]: openCodeErrorMessage(e) || 'The OpenCode request failed.' }))
+        if (sendingSessionRef.current === sid) sendingSessionRef.current = null
+        if (selectedSessionIdRef.current === sid) setWaitingForAssistantReply(false)
       }
     })()
-  }, [selectedSessionId, sessions, composerModelRef, applyMemoryWorkerTaskSegments, refreshSessions, refreshTaskSegmentsFromWorker])
+  }, [directoryLoading, apiConnected, createAndSelectSession, composerModelRef, applyMemoryWorkerTaskSegments, refreshSessions, refreshTaskSegmentsFromWorker])
 
   const handleAbortMessage = useCallback(async () => {
     if (!selectedSessionId) return
     const sid = selectedSessionId
     const dir = sessions.find(s => s.id === sid)?.directory
     abortGenerationRef.current += 1
+    sendingSessionRef.current = null
     setWaitingForAssistantReply(false)
     // Clear local permission/question prompts — abort cancels the turn that asked for them.
     setPendingPermissionQueues((prev) => {
@@ -2434,40 +2534,40 @@ function App() {
   const handleSelectDirectory = useCallback(
     async (dir: string) => {
       const normalized = normalizeSessionDirectory(dir)
+      const selection = ++directorySelectionRef.current
       selectedDirectoryRef.current = normalized
+      selectedSessionIdRef.current = ''
       setSelectedDirectory(normalized)
       setSelectedSessionId('')
       setMessages([])
       setTodos([])
       setTodosSnapshotAtMessageIndex({})
 
-      const list = await refreshSessions([normalized])
-      const refreshedInFolder = list
-        .filter(s => sameDirectory(s.directory, normalized))
-        .sort((a, b) => b.time.updated - a.time.updated)
-      if (refreshedInFolder.length > 0) {
-        setSelectedSessionId(refreshedInFolder[0]!.id)
+      setDirectoryLoading(true)
+      try {
+        const list = await refreshSessions([normalized])
+        if (directorySelectionRef.current !== selection) return
+        const refreshedInFolder = list
+          .filter(s => sameDirectory(s.directory, normalized) && !shouldHideSessionFromHistory(s.id, s))
+          .sort((a, b) => b.time.updated - a.time.updated)
+        if (refreshedInFolder.length > 0) {
+          selectedSessionIdRef.current = refreshedInFolder[0]!.id
+          setSelectedSessionId(refreshedInFolder[0]!.id)
+        }
+      } finally {
+        if (directorySelectionRef.current === selection) setDirectoryLoading(false)
       }
     },
     [refreshSessions],
   )
 
   const handleCreateSession = useCallback(async () => {
-    setCreatingSession(true)
     try {
-      const dir = selectedDirectory || undefined
-      const created = await createSession(dir)
-      const list = await refreshSessions([created.directory])
-      setSessions(list)
-      setApiConnected(true)
-      setSelectedDirectory(normalizeSessionDirectory(created.directory))
-      setSelectedSessionId(created.id)
-    } catch {
-      setApiConnected(false)
-    } finally {
-      setCreatingSession(false)
+      await createAndSelectSession(selectedDirectoryRef.current || undefined)
+    } catch (error) {
+      window.alert(`Could not create conversation: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, [selectedDirectory, refreshSessions])
+  }, [createAndSelectSession])
 
   const handleAddDirectory = useCallback(async () => {
     const dir = promptDirectoryPath(selectedDirectory || '')
@@ -2475,19 +2575,8 @@ function App() {
     setManualDirectories((prev) => (prev.includes(dir) ? prev : [...prev, dir]))
     setKnownDirectories((prev) => mergeKnownDirectories(prev, [dir]))
     setClosedDirectories((prev) => prev.filter((d) => d !== dir))
-    setSelectedDirectory(dir)
-    setSelectedSessionId('')
-    setMessages([])
-    setTodos([])
-    setTodosSnapshotAtMessageIndex({})
-    const list = await refreshSessions([dir])
-    const inFolder = list
-      .filter(s => sameDirectory(s.directory, dir))
-      .sort((a, b) => b.time.updated - a.time.updated)
-    if (inFolder.length > 0) {
-      setSelectedSessionId(inFolder[0]!.id)
-    }
-  }, [selectedDirectory, refreshSessions])
+    await handleSelectDirectory(dir)
+  }, [selectedDirectory, handleSelectDirectory])
 
   const handleCloseDirectory = useCallback(
     (dir: string) => {
@@ -2495,6 +2584,10 @@ function App() {
       if (!normalized) return
       setClosedDirectories((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]))
       if (sameDirectory(selectedDirectory, normalized)) {
+        directorySelectionRef.current += 1
+        selectedDirectoryRef.current = ''
+        selectedSessionIdRef.current = ''
+        setDirectoryLoading(false)
         setSelectedDirectory('')
         setSelectedSessionId('')
         setMessages([])
@@ -2800,6 +2893,9 @@ function App() {
       {/* Sidebar: workspaces + sessions */}
       <Sidebar
         sessionsInFolder={sessionsInFolder}
+        sessionErrors={selectedSessionId && !sessionErrors[selectedSessionId] && !dismissedHistoryErrors[selectedSessionId] && latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId))
+          ? { ...sessionErrors, [selectedSessionId]: latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId))! }
+          : sessionErrors}
         directories={directories}
         selectedDirectory={selectedDirectory}
         onSelectDirectory={handleSelectDirectory}
@@ -2851,6 +2947,11 @@ function App() {
             }}
           >
             <MessagePanel
+              sessionRetry={sessionRetries[selectedSessionId]}
+              sessionError={sessionErrors[selectedSessionId] || (dismissedHistoryErrors[selectedSessionId] ? null : latestMessageError(messages.filter(m => m.info.sessionID === selectedSessionId)))}
+              canStartSession={apiConnected && !!selectedDirectory && !selectedSessionId && sessionsInFolder.length === 0 && !directoryLoading}
+              composerBusy={creatingSession || directoryLoading}
+              composerContextKey={selectedDirectory}
               messages={messages}
               latestTodos={latestActiveForPanel}
               archivedTodos={archivedForPanel}
