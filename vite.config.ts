@@ -123,6 +123,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // Old tsc-emitted .js files may sit beside sources in a developer checkout.
+    // Resolve the maintained TypeScript sources first without deleting those files.
+    resolve: { extensions: ['.mjs', '.mts', '.ts', '.tsx', '.js', '.jsx', '.json'] },
     server: {
       port: 5173,
       ...(Object.keys(proxy).length ? { proxy } : {}),

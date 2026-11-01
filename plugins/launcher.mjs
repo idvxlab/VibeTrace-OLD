@@ -1,9 +1,10 @@
-import { spawn, execFileSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, openSync, closeSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
+import { findPython, findNode } from './environment.mjs'
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 function defaultRuntimeDir() {
@@ -13,26 +14,10 @@ function defaultRuntimeDir() {
 }
 export const runtimeDir = process.env.VIBETRACE_RUNTIME_DIR || defaultRuntimeDir()
 export function pythonExecutable(configured) {
-  const python = configured || process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3')
-  return execFileSync(python, ['-c', 'import sys; assert sys.version_info >= (3, 9), "Python 3.9+ required"; print(sys.executable)'], { encoding: 'utf8' }).trim()
+  return findPython(configured).path
 }
 export function nodeExecutable(configured, host = process) {
-  // Electron utility processes expose their helper executable as execPath.
-  // Only a plain Node host can safely reuse its own executable.
-  const node = configured || process.env.VIBETRACE_NODE ||
-    (host.versions.bun || host.versions.electron ? 'node' : host.execPath)
-  let result
-  try {
-    result = JSON.parse(execFileSync(node, ['-p', 'JSON.stringify({path:process.execPath,node:process.versions.node,electron:!!process.versions.electron,bun:!!process.versions.bun})'], {
-      encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim())
-  } catch {
-    throw new Error('VibeTrace could not start Node.js. Install Node.js 20+ or set VIBETRACE_NODE to its absolute executable path; then restart OpenCode.')
-  }
-  if (typeof result.path !== 'string' || !result.path.trim() || result.electron || result.bun || !(Number(result.node?.split('.')[0]) >= 20)) {
-    throw new Error('VibeTrace requires a standalone Node.js 20+ executable. Set VIBETRACE_NODE to its absolute path; then restart OpenCode.')
-  }
-  return result.path
+  return findNode(configured, host).path
 }
 export function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32.exe' : 'xdg-open'
@@ -54,8 +39,8 @@ const pending = new Map()
 export function ensureRuntime(ctx, options = {}) {
   const url = new URL(ctx.serverUrl)
   if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return Promise.reject(new Error('VibeTrace first version supports local HTTP OpenCode servers'))
-  const password = ctx.vibetraceAuth?.password || process.env.OPENCODE_SERVER_PASSWORD || decodeURIComponent(url.password)
-  const username = ctx.vibetraceAuth?.username || process.env.OPENCODE_SERVER_USERNAME || decodeURIComponent(url.username) || 'opencode'
+  const password = ctx.vibetraceAuth?.password ?? process.env.OPENCODE_PASSWORD ?? process.env.OPENCODE_SERVER_PASSWORD ?? decodeURIComponent(url.password)
+  const username = 'opencode'
   url.username = ''; url.password = ''
   const key = createHash('sha256').update(`${process.pid}:${url.href}:${username}:${password}`).digest('hex').slice(0, 16)
   if (pending.has(key)) {

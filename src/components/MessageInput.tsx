@@ -52,6 +52,7 @@ export default function MessageInput({
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
   const [attachError, setAttachError] = useState<string | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -88,7 +89,8 @@ export default function MessageInput({
   }, [composerModelOptions])
 
   const handleSend = async () => {
-    if (!canSend) return
+    if (!canSend || sendingRef.current) return
+    sendingRef.current = true
     const prevText = text
     const prevFiles = files
     // Clear immediately so long requests don’t leave stale text in the composer
@@ -106,6 +108,7 @@ export default function MessageInput({
       const msg = err instanceof Error ? err.message : String(err)
       setAttachError(msg)
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }

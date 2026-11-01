@@ -1,9 +1,14 @@
 {
-  "name": "@xiaokeyan/opencode-vibetrace",
+  "name": "@xiaokeyan/opencode-v2-vibetrace",
   "description": "Real-time monitoring, intervention, and skill evolution for OpenCode",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.2",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "next",
+    "registry": "https://registry.npmjs.org/"
+  },
   "homepage": "https://github.com/idvxlab/VibeTrace#readme",
   "repository": {
     "type": "git",
@@ -16,18 +21,21 @@
     "observability",
     "visualization"
   ],
-  "main": "./plugins/vibetrace.mjs",
+  "main": "./index.js",
   "engines": {
     "node": ">=20"
   },
   "exports": {
-    ".": "./plugins/vibetrace.mjs",
-    "./server": "./plugins/vibetrace.mjs"
+    ".": "./index.js",
+    "./server": "./index.js",
+    "./tui": "./tui.js"
   },
   "bin": {
     "vibetrace": "scripts/vibetrace.mjs"
   },
   "files": [
+    "index.js",
+    "tui.js",
     "dist",
     "plugins/*.mjs",
     "memory_worker/*.py",
@@ -35,46 +43,58 @@
     "memory_worker/skill_evolve/*.py",
     "memory_worker/skill_evolve/prompts/*.md",
     "scripts/vibetrace.mjs",
+    "scripts/install.sh",
+    "scripts/install.ps1",
+    "scripts/install.cmd",
     "fig/timeline-view.png",
     "README.md",
+    "docs/installation.md",
+    "docs/opencode-v2.md",
     "LICENSE"
   ],
   "scripts": {
     "build:plugin": "node scripts/build-plugin.mjs",
     "prepack": "npm run build:plugin",
     "plugin:install": "npm run build:plugin && node scripts/vibetrace.mjs install",
+    "plugin:doctor": "node scripts/vibetrace.mjs doctor",
+    "test:installer": "node --test tests/installer.test.mjs",
     "plugin:status": "node scripts/vibetrace.mjs status",
     "plugin:open": "node scripts/vibetrace.mjs open",
     "plugin:stop": "node scripts/vibetrace.mjs stop",
     "plugin:uninstall": "node scripts/vibetrace.mjs uninstall",
     "test:plugin": "node tests/plugin-smoke.mjs",
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc -b && vite build --config vite.config.ts",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "vite preview --config vite.config.ts",
     "smoke:opencode": "node scripts/smoke-opencode-session.mjs",
     "worker:py": "python3 memory_worker/server.py",
-    "env:manual": "powershell -File scripts/use-manual-env.ps1"
+    "env:manual": "powershell -File scripts/use-manual-env.ps1",
+    "test:composer": "node tests/fresh-folder-smoke.mjs"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.2",
-    "d3": "^7.9.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-tooltip": "^5.30.0",
-    "tailwindcss": "^4.2.2",
     "@eslint/js": "^9.39.4",
+    "@tailwindcss/vite": "^4.2.2",
     "@types/d3": "^7.4.3",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "d3": "^7.9.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-tooltip": "^5.30.0",
+    "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1"
+  },
+  "dependencies": {
+    "@opencode/client": "2.1.4",
+    "@opencode/plugin": "2.1.4"
   }
 }

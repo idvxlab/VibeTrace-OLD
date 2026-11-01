@@ -16,6 +16,16 @@ dist-ssr
 .opencode-src/
 .env.local
 .env.*.local
+.env
+.env.*
+!.env.example
+
+# JavaScript emitted beside the maintained TypeScript sources
+/src/**/*.js
+/src/**/*.js.map
+/vite.config.js
+/vite.config.js.map
+*.tsbuildinfo
 
 # Editor directories and files
 .qoder/
@@ -40,6 +50,9 @@ memory_worker/logs/
 .vibetrace-plugin-status.txt
 .vibetrace-runtime/
 release/*.tgz
+
+# Personal installation/configuration history (local only)
+/.local-notes/
 
 # User-study recordings written into a workspace (do not commit)
 vibetrace-behavior/

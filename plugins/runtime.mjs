@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { createV2Api } from './v2-api.mjs'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs'
 import { dirname, resolve, extname, sep } from 'node:path'
@@ -46,27 +47,8 @@ function proxy(req, res, base, authenticated) {
 
 async function main() {
   if (!existsSync(resolve(root, 'dist/index.html'))) throw new Error('Build the UI first: npm run build:plugin')
-  const workerPort = await new Promise((resolvePort, reject) => {
-    worker = spawn(config.python, ['-u', resolve(root, 'memory_worker/server.py')], {
-      cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
-        VIBETRACE_PLUGIN_MODE: '1', VIBETRACE_DATA_DIR: config.dataDir,
-        MEMORY_WORKER_PORT: '0', OPENCODE_BASE: config.serverUrl,
-        OPENCODE_DIRECTORY: config.directory,
-        OPENCODE_SERVER_PASSWORD: config.password, OPENCODE_SERVER_USERNAME: config.username,
-      },
-    })
-    const timeout = setTimeout(() => reject(new Error('Python worker startup timed out; see runtime log')), 20000)
-    let buffer = ''
-    worker.stdout.on('data', data => {
-      process.stdout.write(data)
-      buffer = (buffer + data).slice(-8192)
-      const match = buffer.match(/VIBETRACE_WORKER_READY=(\d+)/)
-      if (match) { clearTimeout(timeout); resolvePort(Number(match[1])) }
-    })
-    worker.stderr.pipe(process.stderr)
-    worker.once('error', e => { clearTimeout(timeout); reject(e) })
-    worker.once('exit', () => { clearTimeout(timeout); reject(new Error('Python worker exited')); stop() })
-  })
+  let workerPort
+  const api = createV2Api(config)
   server = http.createServer((req, res) => {
     if (req.headers.host !== `127.0.0.1:${server.address().port}`) { res.writeHead(403); res.end(); return }
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) { res.writeHead(403); res.end(); return }
@@ -76,8 +58,11 @@ async function main() {
       res.end(JSON.stringify({ service: 'vibetrace-plugin', root, parentPid: config.parentPid, serverUrl: config.serverUrl, connectionMode: config.connectionMode, reportedServerUrl: config.reportedServerUrl, workerPort }))
       return
     }
-    if (matches(pathname, workerPaths)) return proxy(req, res, `http://127.0.0.1:${workerPort}`, false)
-    if (matches(pathname, apiPaths)) return proxy(req, res, config.serverUrl, true)
+    if (matches(pathname, workerPaths)) {
+      if (!workerPort) { res.writeHead(503); res.end('VibeTrace worker starting'); return }
+      return proxy(req, res, `http://127.0.0.1:${workerPort}`, false)
+    }
+    if (matches(pathname, apiPaths)) return void api(req, res)
     let file
     try { file = resolve(root, 'dist', '.' + decodeURIComponent(pathname)) } catch { res.writeHead(400); res.end(); return }
     const dist = resolve(root, 'dist')
@@ -101,6 +86,28 @@ async function main() {
     server.listen(5174, '127.0.0.1', () => { server.removeListener('error', onError); ok() })
   })
   const url = `http://127.0.0.1:${server.address().port}`
+  const runtimeUrl = url
+  workerPort = await new Promise((resolvePort, reject) => {
+    worker = spawn(config.python, ['-u', resolve(root, 'memory_worker/server.py')], {
+      cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
+        VIBETRACE_PLUGIN_MODE: '1', VIBETRACE_DATA_DIR: config.dataDir,
+        MEMORY_WORKER_PORT: '0', OPENCODE_BASE: runtimeUrl,
+        OPENCODE_DIRECTORY: config.directory,
+        OPENCODE_SERVER_PASSWORD: config.password, OPENCODE_SERVER_USERNAME: config.username,
+      },
+    })
+    const timeout = setTimeout(() => reject(new Error('Python worker startup timed out; see runtime log')), 20000)
+    let buffer = ''
+    worker.stdout.on('data', data => {
+      process.stdout.write(data)
+      buffer = (buffer + data).slice(-8192)
+      const match = buffer.match(/VIBETRACE_WORKER_READY=(\d+)/)
+      if (match) { clearTimeout(timeout); resolvePort(Number(match[1])) }
+    })
+    worker.stderr.pipe(process.stderr)
+    worker.once('error', e => { clearTimeout(timeout); reject(e) })
+    worker.once('exit', () => { clearTimeout(timeout); reject(new Error('Python worker exited')); stop() })
+  })
   writeFileSync(stateFile, JSON.stringify({ url, pid: process.pid, parentPid: config.parentPid, root, serverUrl: config.serverUrl, connectionMode: config.connectionMode, reportedServerUrl: config.reportedServerUrl, workerPort }), { mode: 0o600 })
   console.log(`VIBETRACE_READY=${url}`)
   timer = setInterval(() => { try { process.kill(config.parentPid, 0) } catch { stop() } }, 2000)

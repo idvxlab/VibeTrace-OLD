@@ -23,6 +23,10 @@ interface MessagePanelProps {
   /** User message sent; polling until assistant reply arrives (SSE may lag) */
   waitingForAssistantReply?: boolean
   sessionId: string
+  /** An empty workspace can create its first conversation when the user sends. */
+  canStartSession?: boolean
+  composerBusy?: boolean
+  composerContextKey?: string
   sessionTitle?: string
   onRefresh: () => void
   onSendMessage: (payload: MessageSendPayload) => Promise<void>
@@ -80,6 +84,9 @@ export default function MessagePanel({
   loading,
   waitingForAssistantReply = false,
   sessionId,
+  canStartSession = false,
+  composerBusy = false,
+  composerContextKey,
   sessionTitle,
   onRefresh,
   onSendMessage,
@@ -388,7 +395,9 @@ export default function MessagePanel({
             </div>
           ) : messages.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 12 }}>
-              Pick a session to start chatting
+              {sessionId || canStartSession
+                ? 'Send a message to start a conversation'
+                : 'Select a folder or session to start chatting'}
             </div>
           ) : (
             messages.map((msg, idx) => {
@@ -508,8 +517,9 @@ export default function MessagePanel({
       {/* Composer */}
       <div style={{ flexShrink: 0 }}>
         <MessageInput
+          key={composerContextKey}
           onSend={onSendMessage}
-          disabled={!sessionId || loading || questionSubmitting || permissionSubmitting || blockComposerForQuestion || blockComposerForPermission}
+          disabled={(!sessionId && !canStartSession) || composerBusy || loading || questionSubmitting || permissionSubmitting || blockComposerForQuestion || blockComposerForPermission}
           onAbort={onAbortMessage}
           isRunning={agentBusy}
           aborting={aborting}

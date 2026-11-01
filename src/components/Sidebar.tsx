@@ -316,7 +316,7 @@ export default function Sidebar({
         >
           {sessionsInFolder.length === 0 ? (
             <div style={{ padding: '12px 14px', fontSize: 12, color: '#8F8F8F', lineHeight: 1.5 }}>
-              No sessions in this folder yet. Use &quot;New session&quot; to start.
+              No sessions in this folder yet. Send a message to start.
             </div>
           ) : (
             sessionsInFolder.map((session) => (
