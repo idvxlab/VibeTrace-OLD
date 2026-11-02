@@ -1,18 +1,22 @@
-# VibeTrace: See how your agents think
+<h1 align="center">VibeTrace</h1>
 
-Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding
-
-A web dashboard for **[OpenCode](https://opencode.ai/)** that connects to a local OpenCode HTTP server (REST + Server-Sent Events). VibeTrace gives developers a live, layered view of agent execution and supports **action-level process intervention** — fork, inspect, and steer runs without losing trajectory context.
-
----
-
-## UI preview
+<p align="center"><strong>See how your agents think. Steer what happens next.</strong></p>
 
 <p align="center">
-<img src="./fig/timeline-view.png" alt="VibeTrace action-flow view" width="100%" />
+  A visual workspace for human–agent collaboration with <a href="https://opencode.ai/">OpenCode</a>.<br />
+  Understand execution, intervene at any action, and turn experience into reusable skills.
 </p>
 
----
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#1-layered-real-time-execution-visualization">Visualization</a> ·
+  <a href="#2-action-level-process-intervention">Intervention</a> ·
+  <a href="#3-continuous-skill-evolution">Skill evolution</a>
+</p>
+
+<p align="center">
+  <img src="./fig/collaboration-workflow.png" alt="Human–agent collaboration: ask the agent, observe execution with VibeTrace, intervene, and distill reusable skills" width="100%" />
+</p>
 
 ## Three core capabilities
 
@@ -26,6 +30,10 @@ VibeTrace turns raw OpenCode message streams into a structured, reviewable execu
 - **Per-panel analysis** — Each subtask panel can show a trace summary and automated error diagnosis to help you understand what happened and where things went wrong.
 - **Cross-linking** — Optional connectors from todo rows into a linked card **or into the focused action** when one is selected.
 
+<p align="center">
+  <img src="./fig/timeline-view.png" alt="VibeTrace action-flow view" width="100%" />
+</p>
+
 ### 2. Action-level process intervention
 
 Beyond observation, VibeTrace supports interactive steering grounded in the live trajectory:
@@ -33,6 +41,10 @@ Beyond observation, VibeTrace supports interactive steering grounded in the live
 - **Fork from any action** — Branch the session at a specific tool/agent step, capture a pre-fork panel snapshot, and continue in a new OpenCode session while preserving comparison context.
 - **Trajectory-based branching** — Fork connectors and ghost trails show how a branched run diverges from the parent path, so you can experiment without losing sight of the original execution.
 
+
+<p align="center">
+  <img src="./fig/action-level-intervention.png" alt="Fork an agent trajectory and provide feedback" width="100%" />
+</p>
 
 ### 3. Continuous skill evolution
 
@@ -42,8 +54,11 @@ VibeTrace turns execution traces and feedback into reusable skills:
 - **Distill and refine skills** — The evolution pipeline evaluates trace evidence, distills candidate changes, scores them, and writes accepted changes to local skill files. Skills can be created, revised, merged, or removed as experience accumulates.
 - **Learn from feedback** — Task-level and panel-level feedback can be distilled into reusable guidance, with links back to the source trajectory for review.
 
-Analysis is triggered through the dashboard and uses models configured in OpenCode. Background model availability and quota affect whether analysis and evolution can complete; installing the plugin does not by itself train or change the underlying model.
+<p align="center">
+  <img src="./fig/continuous-skill-evolution.png" alt="Reusable skills and their distillation history" width="100%" />
+</p>
 
+Analysis is triggered through the dashboard and uses models configured in OpenCode. Background model availability and quota affect whether analysis and evolution can complete; installing the plugin does not by itself train or change the underlying model.
 
 ---
 
